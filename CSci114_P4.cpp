@@ -7,6 +7,21 @@
 #include <condition_variable>
 #include <cassert>
 
+/*
+----- HOW TO RUN THE PROGRAM -----
+    1. In Cygwin, compile program typing:
+        g++ CSci114_P4.cpp
+    (MAKE SURE to have request.txt in the same directory)
+    2. Type "./a.exe N M", manually plugging each variable as:
+        N - threads
+        M - capacity
+    3. The output will show each step in allocating a unit to each thread and freeing
+       up the resources after a thread is done. The program will step when the available units are all free
+       and that all threads are finished (all 0's)
+
+       - NATHAN JACK LUNA
+*/
+
 // Global variables
 std::mutex m_mutex;
 std::condition_variable cv;
@@ -45,7 +60,6 @@ public:
             for (int j = 0; j < requests[tid].at(i); j++) {
                 request(tid);
             }
-            std::unique_lock<std::mutex> lock(m_mutex);
             avail += alloc[tid];
             alloc[tid] = 0;
             printCurrentAlloc();
@@ -93,11 +107,10 @@ public:
 
     void request(int tid) {
         std::unique_lock<std::mutex> lock(m_mutex);
+
         assert(isSafe());
         while (!wouldBeSafe(tid))
             cv.wait(lock);
-        // avail--;
-        // alloc[tid]++;
         printCurrentAlloc();
         assert(isSafe());
         cv.notify_all();
@@ -135,8 +148,14 @@ int main(int argc, char* argv[]) {
     std::ifstream file("requests.txt");
 
     // Starter code main()
-    while (file >> tid >> units)
+    while (file >> tid >> units) {
+        if (tid > N || tid < 1) {
+            std::cout << "Skipping Thread ID " << tid << std::endl;
+            continue;
+        }
+
         requests[tid - 1].push_back(units);
+    }
 
      ResourceMgr resource_mgr(N, M);
 
@@ -146,6 +165,8 @@ int main(int argc, char* argv[]) {
         threads.emplace_back(&ResourceMgr::thread_func, &resource_mgr, i);
     for (std::thread& thread : threads)
         thread.join();
+
+    std::cout << "Algorithm Complete\n\n";
 
     file.close();
     return 0;
