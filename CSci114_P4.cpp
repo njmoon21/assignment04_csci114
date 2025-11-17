@@ -5,6 +5,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <cassert>
 
 // Global variables
 std::mutex m_mutex;
@@ -22,7 +23,6 @@ private:
     int totalThreads;
     std::vector <int> max;
     std::vector<int> alloc;
-    std::vector<int> need;
 
 public:
     ResourceMgr(int N, int M) { // Constructor
@@ -33,7 +33,8 @@ public:
         alloc.assign(N, 0);
         max.assign(N, 0);
         for (int i = 0; i < N; i++) {
-            max[i] = requests[i][0];
+            if (!requests[i].empty())
+                max[i] = requests[i][0];
         }
     }
 
@@ -61,60 +62,58 @@ public:
         while (true) {
             int j = -9999; // Representing a value that isn't represented for an index of an array. I tried using NULL but apparently it isn't recommended
             for (int i = 0; i < totalThreads; i++) {
-                if (!finish[i] && need[i] <= toBeAvail) {
+                int need = max[i] - toBeAlloc[i];
+                if (!finish[i] && need <= toBeAvail) {
                     j = i; // Found a tid
                     break;
                 }
             }
             if (j == -9999) { // If we didn't find any thread through our previous search
                 for (bool thread : finish) {
-                    if (thread != true) // If that thread isn't finished, automatically return false, because there's no possible allocation
+                    if (thread == false) // If that thread isn't finished, automatically return false, because there's no possible allocation
                         return false;
                 }
                 return true;
-            } else {
-                // Comment from figure 6.21, "Thread j will eventually finish and return its current allocation to the pool"
-                toBeAvail += toBeAlloc[j];
-                finish[j] = true;
             }
+            // Comment from figure 6.21, "Thread j will eventually finish and return its current allocation to the pool"
+            toBeAvail += toBeAlloc[j];
+            finish[j] = true;
         }
     };
 
     bool wouldBeSafe(int tid) {
-        bool result = false;
-
         avail--; // This is one single-shared object, not multi-shared, so this is an int and not an array for resourceID's
         alloc[tid]++;
-        if (isSafe()) {
-            result = true;
-        }
+        if (isSafe())
+            return true;
         avail++;
         alloc[tid]--;
-        return result;
+        return false;
     };
 
     void request(int tid) {
         std::unique_lock<std::mutex> lock(m_mutex);
-        if (isSafe()) {
-            while (!wouldBeSafe(tid))
-                cv.wait(lock);
-            avail--;
-            alloc[tid]++;
-            printCurrentAlloc();
-        }
-
-        if (isSafe())
-            cv.notify_all();
+        assert(isSafe());
+        while (!wouldBeSafe(tid))
+            cv.wait(lock);
+        // avail--;
+        // alloc[tid]++;
+        printCurrentAlloc();
+        assert(isSafe());
+        cv.notify_all();
     }
 
-    // Printing
+    // Printing all threads and their current amount of units allocated
     void printCurrentAlloc() {
         std::cout << "[ ";
 
-        for (int i = 0; i < totalThreads; i++)
+        for (int i = 0; i < alloc.size(); i++) {
             std::cout << alloc[i] << " ";
+            if (i != alloc.size() - 1)
+                std::cout << ", ";
+        }
 
-        std::cout << "]" << std::endl;
+        std::cout << "]   Available Units = " << avail << std::endl;
     }
 };
 
@@ -133,15 +132,13 @@ int main(int argc, char* argv[]) {
     requests.assign(N, std::vector<int>());
 
     // File processing
-    std::ifstream file("requests-3.txt");
+    std::ifstream file("requests.txt");
 
     // Starter code main()
-    while (!file.eof()) {
-        std::cin >> tid >> units;
-        requests[tid].push_back(units);
-    }
+    while (file >> tid >> units)
+        requests[tid - 1].push_back(units);
 
-    ResourceMgr resource_mgr(N, M);
+     ResourceMgr resource_mgr(N, M);
 
     // Creating and joining threads
     std::vector<std::thread> threads;
@@ -151,6 +148,5 @@ int main(int argc, char* argv[]) {
         thread.join();
 
     file.close();
-
     return 0;
 }
